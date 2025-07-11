@@ -57,6 +57,10 @@ When you add a new application installer to any subdirectory in the `releases` f
     git commit -m "Add new version of ClueAI v1.2.3"
     git push origin main
     ```
+    ```bash
+      git add . && git commit -m "Fix workflow: remove empty file and add proper release settings" && git push origin main
+
+    ```
 3.  **Automatic Release:** The GitHub Action will run and create a new release with your installers attached. You can then find the direct download links on the "Releases" page of this repository.
 
 ## Download Links
