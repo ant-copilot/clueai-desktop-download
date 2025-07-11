@@ -72,12 +72,27 @@ jobs:
             --title "Release ${{ steps.version.outputs.version }}" \
             --notes "Automated release for version ${{ steps.version.outputs.version }}"
           
-          # Upload files one by one
-          for file in $(find releases -type f \( -name "*.exe" -o -name "*.dmg" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.rpm" \)); do
+          # List all files that will be uploaded
+          echo "=== Files to be uploaded ==="
+          find releases -type f \( -name "*.exe" -o -name "*.dmg" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.rpm" \) | sort
+          
+          # Upload files one by one with detailed logging
+          upload_count=0
+          for file in $(find releases -type f \( -name "*.exe" -o -name "*.dmg" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.rpm" \) | sort); do
             if [ -f "$file" ]; then
-              echo "Uploading $file"
-              gh release upload ${{ steps.version.outputs.version }} "$file" --clobber
+              echo "=== Uploading file $((++upload_count)) ==="
+              echo "File path: $file"
+              echo "File size: $(wc -c < "$file") bytes"
+              echo "Uploading..."
+              if gh release upload ${{ steps.version.outputs.version }} "$file" --clobber; then
+                echo "✅ Successfully uploaded: $file"
+              else
+                echo "❌ Failed to upload: $file"
+                exit 1
+              fi
+              echo "---"
             fi
           done
+          echo "=== Upload complete. Total files uploaded: $upload_count ==="
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
