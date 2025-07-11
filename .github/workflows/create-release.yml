@@ -1,0 +1,51 @@
+name: Create Release
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'releases/**'
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Get version from file name
+        id: get_version
+        run: |
+          # Find the first file in the releases directory and extract a version number.
+          # This is a simple example; you might need a more robust way to determine the version.
+          file_path=$(find releases -type f | head -n 1)
+          if [ -n "$file_path" ]; then
+            version=$(echo "$file_path" | grep -o -E '[0-9]+\.[0-9]+\.[0-9]+')
+            if [ -z "$version" ]; then
+              version="v$(date +%Y%m%d%H%M%S)"
+            fi
+          else
+            version="v$(date +%Y%m%d%H%M%S)"
+          fi
+          echo "version=$version" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.get_version.outputs.version }}
+          release_name: Release ${{ steps.get_version.outputs.version }}
+          draft: false
+          prerelease: false
+
+      - name: Upload Release Assets
+        uses: csexton/release-asset-action@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          release-url: ${{ steps.create_release.outputs.upload_url }}
+          asset-path: releases/
+          asset-name: clueai-desktop-${{ steps.get_version.outputs.version }}
+          asset-content-type: application/octet-stream
