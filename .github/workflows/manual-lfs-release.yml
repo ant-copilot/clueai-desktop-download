@@ -1,0 +1,77 @@
+name: Manual LFS Release
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'releases/**'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code with LFS
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+          
+      - name: Pull LFS files
+        run: |
+          git lfs pull
+          
+      - name: Verify LFS files are actual binaries
+        run: |
+          echo "=== Checking if files are LFS pointers or actual binaries ==="
+          for file in $(find releases -name "*.exe" -o -name "*.dmg" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.rpm"); do
+            if [ -f "$file" ]; then
+              size=$(wc -c < "$file")
+              echo "File: $file"
+              echo "Size: $size bytes"
+              if [ $size -lt 1000 ]; then
+                echo "WARNING: This looks like an LFS pointer file!"
+                echo "Content preview:"
+                head -5 "$file"
+              else
+                echo "✓ This appears to be the actual binary file"
+              fi
+              echo "---"
+            fi
+          done
+
+      - name: Get version from filename
+        id: version
+        run: |
+          version=$(find releases -name "*.exe" | head -1 | grep -o -E '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+          if [ -z "$version" ]; then
+            version="1.0.0"
+          fi
+          echo "version=v$version" >> $GITHUB_OUTPUT
+          echo "Found version: v$version"
+
+      - name: Create Release with GitHub CLI
+        run: |
+          # Delete existing release if it exists
+          if gh release view ${{ steps.version.outputs.version }} > /dev/null 2>&1; then
+            echo "Deleting existing release ${{ steps.version.outputs.version }}"
+            gh release delete ${{ steps.version.outputs.version }} -y
+          fi
+          
+          # Create new release
+          echo "Creating release ${{ steps.version.outputs.version }}"
+          gh release create ${{ steps.version.outputs.version }} \
+            --title "Release ${{ steps.version.outputs.version }}" \
+            --notes "Automated release for version ${{ steps.version.outputs.version }}"
+          
+          # Upload files one by one
+          for file in $(find releases -type f \( -name "*.exe" -o -name "*.dmg" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.rpm" \)); do
+            if [ -f "$file" ]; then
+              echo "Uploading $file"
+              gh release upload ${{ steps.version.outputs.version }} "$file" --clobber
+            fi
+          done
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
