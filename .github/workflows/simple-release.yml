@@ -15,6 +15,11 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          lfs: true
+      
+      - name: Checkout LFS objects
+        run: git lfs checkout
       
       - name: Get version from filename
         id: version
@@ -26,6 +31,11 @@ jobs:
           fi
           echo "version=v$version" >> $GITHUB_OUTPUT
           echo "Found version: v$version"
+      
+      - name: Verify file sizes
+        run: |
+          echo "Checking file sizes before upload:"
+          find releases -type f \( -name "*.exe" -o -name "*.dmg" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.rpm" \) -exec ls -lh {} \;
       
       - name: Create Release
         uses: softprops/action-gh-release@v1
