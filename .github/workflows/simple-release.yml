@@ -16,12 +16,30 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
+      - name: Get version from filename
+        id: version
+        run: |
+          # Find version from exe file
+          version=$(find releases -name "*.exe" | head -1 | grep -o -E '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+          if [ -z "$version" ]; then
+            version="1.0.0"
+          fi
+          echo "version=v$version" >> $GITHUB_OUTPUT
+          echo "Found version: v$version"
+      
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: v1.0.10
-          name: Release v1.0.10
-          files: releases/**/*
+          tag_name: ${{ steps.version.outputs.version }}
+          name: Release ${{ steps.version.outputs.version }}
+          files: |
+            releases/**/*.exe
+            releases/**/*.dmg
+            releases/**/*.AppImage
+            releases/**/*.deb
+            releases/**/*.rpm
           generate_release_notes: true
+          draft: false
+          prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
