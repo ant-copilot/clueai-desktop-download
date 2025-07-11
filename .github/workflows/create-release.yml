@@ -17,13 +17,14 @@ jobs:
       - name: Get version from file name
         id: get_version
         run: |
-          # Find the first file in the releases directory and extract a version number.
-          # This is a simple example; you might need a more robust way to determine the version.
-          file_path=$(find releases -type f | head -n 1)
+          # Find the first non-.gitkeep file in the releases directory and extract a version number.
+          file_path=$(find releases -type f -name "*.exe" -o -name "*.dmg" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.rpm" | head -n 1)
           if [ -n "$file_path" ]; then
             version=$(echo "$file_path" | grep -o -E '[0-9]+\.[0-9]+\.[0-9]+')
             if [ -z "$version" ]; then
               version="v$(date +%Y%m%d%H%M%S)"
+            else
+              version="v$version"
             fi
           else
             version="v$(date +%Y%m%d%H%M%S)"
@@ -42,10 +43,13 @@ jobs:
           prerelease: false
 
       - name: Upload Release Assets
-        uses: csexton/release-asset-action@v2
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          release-url: ${{ steps.create_release.outputs.upload_url }}
-          asset-path: releases/
-          asset-name: clueai-desktop-${{ steps.get_version.outputs.version }}
-          asset-content-type: application/octet-stream
+        run: |
+          # Upload all files from the releases directory as assets
+          for file in $(find releases -type f -name "*.exe" -o -name "*.dmg" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.rpm"); do
+            if [ -f "$file" ]; then
+              echo "Uploading $file"
+              gh release upload ${{ steps.get_version.outputs.version }} "$file"
+            fi
+          done
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
