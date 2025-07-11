@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: write
+  actions: read
 
 jobs:
   create-release:
@@ -34,22 +35,18 @@ jobs:
           echo "Extracted version: $version"
           echo "version=v$version" >> $GITHUB_OUTPUT
 
-      - name: Create Release
+      - name: Create Release and Upload Assets
         run: |
           # Check if release already exists
           if gh release view ${{ steps.get_version.outputs.version }} > /dev/null 2>&1; then
-            echo "Release ${{ steps.get_version.outputs.version }} already exists"
+            echo "Release ${{ steps.get_version.outputs.version }} already exists, uploading additional assets"
           else
             echo "Creating release ${{ steps.get_version.outputs.version }}"
             gh release create ${{ steps.get_version.outputs.version }} \
               --title "Release ${{ steps.get_version.outputs.version }}" \
               --notes "Automated release for version ${{ steps.get_version.outputs.version }}"
           fi
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload Release Assets
-        run: |
+          
           # Upload all files from the releases directory as assets
           find releases -type f \( -name "*.exe" -o -name "*.dmg" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.rpm" \) | while read file; do
             if [ -f "$file" ]; then
