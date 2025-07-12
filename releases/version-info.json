@@ -1,0 +1,11 @@
+{
+  "version": "v1.0.14",
+  "buildDate": "2025-07-12T14:59:52.419Z",
+  "platforms": [
+    "win",
+    "mac",
+    "linux"
+  ],
+  "signed": false,
+  "buildSystem": "ClueAI Desktop Build System v2.0"
+}
