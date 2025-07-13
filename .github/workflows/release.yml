@@ -1,0 +1,139 @@
+name: Auto Release (Primary)
+
+# This is the main workflow that automatically triggers on changes to releases/
+# The other workflows are now manual-only to prevent conflicts
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'releases/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository with LFS
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+          fetch-depth: 0
+
+      - name: Configure Git LFS
+        run: |
+          git lfs install
+          git lfs track "*.exe" "*.dmg" "*.AppImage" "*.deb" "*.rpm"
+
+      - name: Pull all LFS files
+        run: |
+          echo "=== Git LFS Status Before Pull ==="
+          git lfs ls-files
+          echo "=== Pulling LFS files ==="
+          git lfs pull
+          echo "=== Git LFS Status After Pull ==="
+          git lfs ls-files
+
+      - name: Verify files are actual binaries (not LFS pointers)
+        run: |
+          echo "=== Verifying binary files ==="
+          exit_code=0
+          for file in $(find releases -type f \( -name "*.exe" -o -name "*.dmg" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.rpm" \)); do
+            if [ -f "$file" ]; then
+              size=$(stat -c%s "$file" 2>/dev/null || stat -f%z "$file")
+              echo "File: $file"
+              echo "Size: $size bytes"
+              
+              # Check if this looks like an LFS pointer file
+              if [ $size -lt 1000 ]; then
+                echo "❌ ERROR: File appears to be an LFS pointer (too small)!"
+                echo "Content preview:"
+                head -3 "$file"
+                exit_code=1
+              else
+                echo "✅ File appears to be actual binary ($size bytes)"
+              fi
+              echo "---"
+            fi
+          done
+          
+          if [ $exit_code -ne 0 ]; then
+            echo "❌ Some files are LFS pointers instead of actual binaries!"
+            echo "=== LFS Debug Info ==="
+            git lfs env
+            git lfs status
+            exit 1
+          fi
+          echo "✅ All files verified as actual binaries"
+
+      - name: Get version from filename
+        id: version
+        run: |
+          version=$(find releases -name "*.exe" -o -name "*.dmg" | head -1 | grep -o -E '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+          if [ -z "$version" ]; then
+            version="1.0.0"
+          fi
+          echo "version=v$version" >> $GITHUB_OUTPUT
+          echo "Found version: v$version"
+
+      - name: Delete existing release if it exists
+        run: |
+          if gh release view ${{ steps.version.outputs.version }} > /dev/null 2>&1; then
+            echo "Deleting existing release ${{ steps.version.outputs.version }}"
+            gh release delete ${{ steps.version.outputs.version }} -y
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
+
+      - name: Create release
+        run: |
+          echo "Creating release ${{ steps.version.outputs.version }}"
+          gh release create ${{ steps.version.outputs.version }} \
+            --title "ClueAI Desktop ${{ steps.version.outputs.version }}" \
+            --notes "Release ${{ steps.version.outputs.version }} of ClueAI Desktop application with binaries for Windows, macOS, and Linux."
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload release assets
+        run: |
+          echo "=== Files to be uploaded ==="
+          upload_count=0
+          
+          for file in $(find releases -type f \( -name "*.exe" -o -name "*.dmg" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.rpm" \) | sort); do
+            if [ -f "$file" ]; then
+              size=$(stat -c%s "$file" 2>/dev/null || stat -f%z "$file")
+              filename=$(basename "$file")
+              
+              echo "=== Uploading file $((++upload_count)) ==="
+              echo "File: $filename"
+              echo "Path: $file"
+              echo "Size: $size bytes ($(($size / 1024 / 1024)) MB)"
+              
+              # Final check before upload
+              if [ $size -lt 1000 ]; then
+                echo "❌ ERROR: File is too small, likely an LFS pointer!"
+                exit 1
+              fi
+              
+              echo "Uploading..."
+              if gh release upload ${{ steps.version.outputs.version }} "$file" --clobber; then
+                echo "✅ Successfully uploaded: $filename"
+              else
+                echo "❌ Failed to upload: $filename"
+                exit 1
+              fi
+              echo "---"
+            fi
+          done
+          
+          echo "=== Upload Summary ==="
+          echo "Total files uploaded: $upload_count"
+          echo "✅ All assets uploaded successfully!"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,88 @@
+name: Manual Release (Basic)
+
+# Manual-only workflow for creating releases without advanced LFS handling
+# Use this if the main auto-release workflow has issues
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (optional, will auto-detect if not provided)'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code with LFS
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+          fetch-depth: 0
+
+      - name: Configure Git LFS and pull files
+        run: |
+          git lfs install
+          git lfs track "*.exe" "*.dmg" "*.AppImage" "*.deb" "*.rpm"
+          echo "=== Pulling LFS files ==="
+          git lfs pull
+          echo "=== Verifying LFS files ==="
+          git lfs ls-files
+
+      - name: Get version from file name
+        id: get_version
+        run: |
+          # Find the first non-.gitkeep file in the releases directory and extract a version number.
+          file_path=$(find releases -type f -name "*.exe" -o -name "*.dmg" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.rpm" | head -n 1)
+          if [ -n "$file_path" ]; then
+            echo "Found file: $file_path"
+            version=$(echo "$file_path" | grep -o -E '[0-9]+\.[0-9]+\.[0-9]+' | head -n 1)
+            if [ -z "$version" ]; then
+              version="$(date +%Y%m%d%H%M%S)"
+            fi
+          else
+            version="$(date +%Y%m%d%H%M%S)"
+          fi
+          echo "Extracted version: $version"
+          echo "version=v$version" >> $GITHUB_OUTPUT
+
+      - name: Create Release and Upload Assets
+        run: |
+          # Check if release already exists
+          if gh release view ${{ steps.get_version.outputs.version }} > /dev/null 2>&1; then
+            echo "Release ${{ steps.get_version.outputs.version }} already exists, uploading additional assets"
+          else
+            echo "Creating release ${{ steps.get_version.outputs.version }}"
+            gh release create ${{ steps.get_version.outputs.version }} \
+              --title "Release ${{ steps.get_version.outputs.version }}" \
+              --notes "Automated release for version ${{ steps.get_version.outputs.version }}"
+          fi
+          
+          # Upload all files from the releases directory as assets
+          find releases -type f \( -name "*.exe" -o -name "*.dmg" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.rpm" \) | while read file; do
+            if [ -f "$file" ]; then
+              size=$(stat -c%s "$file" 2>/dev/null || stat -f%z "$file")
+              filename=$(basename "$file")
+              
+              echo "=== Uploading: $filename ==="
+              echo "Path: $file"
+              echo "Size: $size bytes ($(($size / 1024 / 1024)) MB)"
+              
+              # Verify it's not an LFS pointer
+              if [ $size -lt 1000 ]; then
+                echo "❌ ERROR: File appears to be an LFS pointer (too small)!"
+                exit 1
+              fi
+              
+              echo "Uploading..."
+              gh release upload ${{ steps.get_version.outputs.version }} "$file" --clobber
+              echo "✅ Successfully uploaded: $filename"
+            fi
+          done
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
